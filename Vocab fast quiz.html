@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Pro Vocabulary Test Generator (Optimized Layout)</title>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/compromise"></script>
+    
+    <style>
+        :root { --primary: #2c3e50; --accent: #2980b9; --bg: #ecf0f1; }
+        body { font-family: "Times New Roman", "SimSun", serif; margin: 0; background: var(--bg); color: #2c3e50; }
+        
+        .setup-panel { max-width: 900px; margin: 30px auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        .setup-header { text-align: center; margin-bottom: 25px; }
+        .setup-header h1 { margin: 0; color: var(--primary); }
+        .setup-header p { color: #7f8c8d; margin-top: 10px; }
+        
+        .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .file-upload { border: 2px dashed #bdc3c7; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; background: #f9f9f9; transition: 0.3s; }
+        .file-upload:hover { border-color: var(--accent); background: #f0f8ff; }
+        
+        textarea { width: 100%; height: 200px; padding: 15px; border: 1px solid #bdc3c7; border-radius: 8px; font-family: monospace; font-size: 14px; resize: vertical; box-sizing: border-box; }
+        
+        /* 自定义题量设置区域 */
+        .config-box { background: #f8f9fa; border: 1px solid #dee2e6; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .config-box h3 { margin-top: 0; font-size: 16px; margin-bottom: 15px; color: #2c3e50; }
+        .config-row { display: flex; gap: 20px; flex-wrap: wrap; }
+        .config-item { display: flex; align-items: center; gap: 8px; }
+        .config-item input { width: 60px; padding: 5px; border: 1px solid #ccc; border-radius: 4px; text-align: center; font-size: 16px;}
+        
+        .btn { background: var(--primary); color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; transition: transform 0.2s, background 0.3s; width: 100%; display: block; }
+        .btn:hover { background: var(--accent); transform: translateY(-2px); }
+        .btn-outline { background: transparent; border: 2px solid var(--primary); color: var(--primary); margin-top: 10px; }
+        .btn-outline:hover { background: var(--primary); color: white; }
+
+        .hidden { display: none !important; }
+        .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; color: white; margin-left: 5px; vertical-align: middle; }
+        .badge-v { background: #e74c3c; } .badge-n { background: #2980b9; } .badge-a { background: #27ae60; }
+        
+        .control-bar { position: sticky; top: 0; background: white; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); z-index: 1000; display: flex; justify-content: center; gap: 15px; }
+        .control-bar button { width: auto; margin: 0; padding: 10px 20px; font-size: 14px; }
+        
+        .paper { max-width: 210mm; margin: 20px auto; background: white; padding: 20mm; min-height: 297mm; box-shadow: 0 0 20px rgba(0,0,0,0.1); position: relative; }
+        
+        [contenteditable="true"] { transition: background 0.2s; border-radius: 3px; }
+        [contenteditable="true"]:hover { background: #fff9c4; outline: 1px dashed #f39c12; cursor: text; }
+        .editable-line { display: inline-block; min-width: 80px; border-bottom: 1px dashed #999; text-align: center; color: #2c3e50; }
+        .student-blank { display: inline-block; min-width: 120px; border-bottom: 1px solid #000; }
+        
+        h1.test-title { text-align: center; font-size: 24pt; text-transform: uppercase; margin-bottom: 5px; border-bottom: none; }
+        .author-info { text-align: center; font-size: 12pt; color: #555; margin-bottom: 25px; font-style: italic; }
+        .header-info { display: flex; justify-content: space-between; border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 30px; font-size: 12pt; }
+        
+        h2.section-title { font-size: 14pt; font-weight: bold; margin-top: 30px; margin-bottom: 15px; background-color: #eee; padding: 8px 15px; border-left: 6px solid #000; }
+        
+        /* 单选题排版 */
+        .mc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px 40px; }
+        .q-item { break-inside: avoid; page-break-inside: avoid; }
+        .options { margin-top: 5px; font-size: 11pt; padding-left: 5px; }
+        
+        /* 配对题排版 (全新优化布局) */
+        .match-block { width: 100%; border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; break-inside: avoid; page-break-inside: avoid; }
+        .match-columns { 
+            display: grid; 
+            grid-template-columns: auto 1fr; /* 魔法在这里：左侧自动适配最长单词，右侧吃掉所有剩余空间 */
+            gap: 40px; /* 左右两列的间距 */
+            align-items: start;
+        }
+        .match-left, .match-right { display: flex; flex-direction: column; gap: 10px; /* 行间距 */ }
+        
+        /* 填空题排版 */
+        .gap-container { column-count: 2; column-gap: 40px; }
+        .gap-item { break-inside: avoid; page-break-inside: avoid; margin-bottom: 15px; }
+
+        @media print {
+            body { background: white; }
+            .setup-panel, .control-bar, .no-print { display: none !important; }
+            .paper { box-shadow: none; margin: 0; width: 100%; padding: 0; }
+            .mc-grid { grid-template-columns: 1fr 1fr; }
+            h2.section-title { background-color: #ddd !important; -webkit-print-color-adjust: exact; }
+            [contenteditable="true"] { outline: none !important; background: transparent !important; }
+            .editable-line { border-bottom: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="setup-panel" id="setupPanel">
+    <div class="setup-header">
+        <h1>🎓 智能词汇试卷生成器 (Pro)</h1>
+        <p>自定义题型分布 | 自动题目序号衔接 | 智能防作弊干扰项 | 极简排版</p>
+    </div>
+
+    <div class="input-grid">
+        <div class="file-upload">
+            <h3 style="margin-top:0">📂 A: 上传 Excel</h3>
+            <p style="font-size:12px; color:#666">支持 .xlsx, .csv (两列: 单词 | 定义)</p>
+            <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" onchange="handleFileUpload(this)" style="margin-top:10px;">
+        </div>
+        <div>
+            <h3 style="margin-top:0">📝 B: 粘贴文本</h3>
+            <textarea id="textInput" placeholder="在此粘贴...&#10;Evaluate   评估&#10;Analyze    分析&#10;Unprecedented  史无前例的&#10;..."></textarea>
+        </div>
+    </div>
+
+    <div class="config-box">
+        <h3>⚙️ 题型分布设置 (总题数不能超过导入的单词数)</h3>
+        <div class="config-row">
+            <div class="config-item">
+                <label>单选题数:</label>
+                <input type="number" id="numMC" min="0" placeholder="自动">
+            </div>
+            <div class="config-item">
+                <label>配对题数:</label>
+                <input type="number" id="numMatch" min="0" placeholder="自动">
+            </div>
+            <div class="config-item">
+                <label>填空题数:</label>
+                <input type="number" id="numGap" min="0" placeholder="自动">
+            </div>
+        </div>
+        <p style="font-size: 12px; color: #7f8c8d; margin-top: 10px; margin-bottom: 0;">
+            * 填 0 则直接删除该板块。如果全部留空，系统将根据您导入的单词总数自动按约 50%:25%:25% 智能分配。
+        </p>
+    </div>
+    
+    <button class="btn" onclick="startGeneration()">🚀 生成试卷</button>
+</div>
+
+<div class="control-bar hidden" id="controlBar">
+    <button class="btn btn-outline" onclick="showSetup()" style="margin-top:0; width:auto;">⬅️ 重新配置</button>
+    <button class="btn" onclick="generateTest()" style="margin-top:0; width:auto;">🔄 随机刷新题目 (保留标题)</button>
+    <button class="btn" onclick="window.print()" style="margin-top:0; width:auto; background:#27ae60;">🖨️ 打印 / 导出 PDF</button>
+    <div id="statusMsg" style="align-self:center; font-size:13px; color:#666; margin-left:15px; font-weight:bold;"></div>
+</div>
+
+<div class="paper hidden" id="paper">
+    <h1 class="test-title" contenteditable="true" title="点击编辑">Academic Vocabulary Assessment</h1>
+    <div class="author-info">Designed by <span class="editable-line" contenteditable="true">[Your Name]</span></div>
+
+    <div class="header-info">
+        <div>Name: <span class="student-blank" contenteditable="true"></span></div>
+        <div>Date: <span class="student-blank" style="min-width: 100px;" contenteditable="true"></span></div>
+        <div>Score: <span class="student-blank" style="min-width: 60px;" contenteditable="true"></span> / <span class="editable-line" style="min-width: 40px; font-weight: bold;" contenteditable="true">100</span></div>
+    </div>
+
+    <div id="block-mc">
+        <h2 class="section-title">
+            <span id="part-num-mc" contenteditable="false">Part I. </span>
+            <span contenteditable="true">Multiple Choice</span>
+        </h2>
+        <p style="font-style:italic; color:#555;" contenteditable="true">Select the word that best matches the definition.</p>
+        <div class="mc-grid" id="section-mc"></div>
+    </div>
+
+    <div id="block-match">
+        <h2 class="section-title">
+            <span id="part-num-match" contenteditable="false">Part II. </span>
+            <span contenteditable="true">Matching</span>
+        </h2>
+        <p style="font-style:italic; color:#555;" contenteditable="true">Match the words in Column A with the definitions in Column B.</p>
+        <div id="section-match"></div>
+    </div>
+
+    <div id="block-gap">
+        <h2 class="section-title">
+            <span id="part-num-gap" contenteditable="false">Part III. </span>
+            <span contenteditable="true">Word Completion</span>
+        </h2>
+        <p style="font-style:italic; color:#555;" contenteditable="true">Complete the spelling based on the hint.</p>
+        <div class="gap-container" id="section-gap"></div>
+    </div>
+
+    <div style="margin-top: 50px; text-align: center; border-top: 1px solid #ccc; padding-top: 10px; font-size: 9pt; color: #999;">
+        Generated by Smart Vocabulary Tool | External Distractors Enabled
+    </div>
+</div>
+
+<script>
+    // 云端干扰词库
+    const BACKUP_DB = {
+        verbs: ["accumulate", "acquire", "adapt", "allocate", "alter", "anticipate", "assess", "assume", "augment", "clarify", "coincide", "collaborate", "commence", "compensate", "compile", "complement", "comprise", "conceive", "confine", "consolidate", "constitute", "constrain", "consult", "contradict", "convene", "convert", "convince", "correspond", "deduce", "define", "demonstrate", "depict", "derive", "diminish", "dispose", "distort", "distribute", "dominate", "eliminate", "emerge", "emphasize", "ensure", "establish", "evaluate", "evolve", "exhibit", "expand", "exploit", "facilitate", "fluctuate", "formulate", "guarantee", "highlight", "identify", "illustrate", "imply", "incorporate", "indicate", "induce", "inevitable", "infer", "inherent", "inhibit", "initiate", "inspect", "integrate", "interact", "interpret", "intervene", "investigate", "invoke", "involve", "isolate", "justify", "launch", "legislate", "locate", "maintain", "manipulate", "maximize", "minimize", "modify", "monitor", "motivate", "negate", "obtain", "occupy", "participate", "perceive", "persist", "predict", "predominate", "presume", "prevail", "proceed", "prohibit", "promote", "publish", "pursue", "react", "reinforce", "reject", "release", "rely", "remove", "require", "reside", "resolve", "restore", "retain", "reveal", "revise", "schedule", "select", "simulate", "specify", "stabilize", "stimulate", "submit", "succeed", "suppress", "sustain", "symbolize", "terminate", "transform", "undergo", "undertake", "utilize", "validate", "vary", "violate"],
+        nouns: ["acquisition", "administration", "advocate", "alternative", "analogy", "analysis", "approach", "aspect", "assembly", "assessment", "assistance", "authority", "benefit", "bias", "bulk", "capacity", "category", "channel", "circumstance", "clarification", "coherence", "colleague", "commission", "commitment", "commodity", "community", "compensation", "complex", "component", "compound", "concept", "conclusion", "conduct", "conference", "conflict", "conformity", "consensus", "consequence", "consist", "constancy", "constituent", "constraint", "construction", "consultation", "context", "contract", "contradiction", "controversy", "convention", "coordination", "core", "corporation", "correlation", "correspondence", "criteria", "currency", "cycle", "debate", "decade", "decline", "deduction", "definition", "demonstration", "depression", "derivation", "design", "device", "dimension", "discretion", "discrimination", "displacement", "display", "disposal", "distinction", "distortion", "distribution", "diversity", "document", "domain", "dominance", "donation", "duration", "economy", "edition", "element", "elevation", "elimination", "emphasis", "energy", "enforcement", "entity", "environment", "equation", "equipment", "equivalent", "erosion", "error", "estimate", "evaluation", "evidence", "evolution", "exclusion", "expansion", "expert", "expertise", "exploitation", "export", "exposure", "extraction", "facility", "factor", "feature", "federal", "fee", "file", "finance", "flexibility", "fluctuation", "focus", "format", "formula", "foundation", "fragment", "framework", "function", "fund", "gap", "gender", "generation", "globe", "goal", "grade", "grant", "guarantee", "guideline", "hierarchy", "hypocrisy", "hypothesis", "identity", "ideology", "ignorance", "illustration", "image", "immigration", "impact", "implementation", "implication", "incentive", "incidence", "inclination", "income", "index", "individual"],
+        adjectives: ["abstract", "accurate", "adequate", "adjacent", "administrative", "adult", "aesthetic", "aggregate", "annual", "apparent", "appreciable", "appropriate", "approximate", "arbitrary", "automatic", "available", "aware", "basic", "beneficial", "capable", "chemical", "civil", "classic", "classical", "coherent", "coincidental", "collective", "compatible", "comprehensive", "concurrent", "confidential", "considerable", "consistent", "constitutional", "constructive", "contemporary", "continuous", "contrary", "controversial", "conventional", "cooperative", "corporate", "corresponding", "crucial", "cultural", "curious", "current", "cyclical", "definitive", "democratic", "dense", "dependent", "descriptive", "devoted", "distinct", "diverse", "domestic", "dominant", "dynamic", "economic", "effective", "efficient", "eligible", "empirical", "enormous", "equivalent", "ethical", "ethnic", "eventual", "evident", "excessive", "explicit", "external", "extreme", "federal", "final", "financial", "flexible", "fluctuating", "formal", "forthcoming", "fundamental", "global", "gradual", "hierarchical", "historical", "identical", "ideological", "ignorant", "illegal", "illogical", "immediate", "immense", "imminent", "implicit", "impressive", "inaccessible", "inaccurate", "inadequate", "inappropriate", "incapable", "incompatible", "incomplete", "inconceivable", "inconsistent", "inevitable", "inferior", "infinite", "inflexible", "inherent", "initial", "innocent", "innovative", "integral", "intelligent", "intense", "internal", "international", "intimate", "invaluable", "invariable", "invisible", "involuntary", "irrelevant", "isolated", "judicial", "legal", "legislative", "liberal", "logical", "manual", "marginal", "mature", "maximum", "medical", "mental", "methodical", "migration", "military", "minimal", "minimum"],
+        others: ["above", "accordingly", "although", "approximately", "backwards", "because", "before", "behind", "below", "beside", "besides", "beyond", "consequently", "conversely", "despite", "during", "elsewhere", "finally", "furthermore", "hence", "however", "instead", "meanwhile", "moreover", "nevertheless", "nonetheless", "notwithstanding", "otherwise", "since", "so", "subsequently", "thereby", "therefore", "thus", "underneath", "whereas", "whereby", "while", "within", "without"]
+    };
+
+    let RAW_DATA = [];
+    let PROCESSED_DATA = [];
+    let CONFIG = { mc: 0, match: 0, gap: 0 };
+
+    function handleFileUpload(input) {
+        const file = input.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+            const wb = XLSX.read(e.target.result, {type:'array'});
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const json = XLSX.utils.sheet_to_json(ws, {header:1});
+            let txt = "";
+            json.forEach(row => { if(row[0] && row[1]) txt += `${row[0]}\t${row[1]}\n`; });
+            document.getElementById('textInput').value = txt;
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function startGeneration() {
+        const text = document.getElementById('textInput').value.trim();
+        if(!text) return alert("请先输入单词数据！");
+        
+        RAW_DATA = [];
+        text.split('\n').forEach(line => {
+            let parts = line.split(/\t/);
+            if(parts.length < 2) parts = line.split(/,\s*/);
+            if(parts.length < 2) parts = line.split(/\s{2,}/);
+            
+            if(parts.length >= 2) {
+                let en = parts[0].trim().replace(/^"|"$/g,'');
+                let def = parts[1].trim().replace(/^"|"$/g,'');
+                if(en) RAW_DATA.push({en, def});
+            }
+        });
+
+        let totalWords = RAW_DATA.length;
+        if(totalWords < 3) return alert("词汇量太少，请至少输入 3 个单词。");
+
+        let inMC = parseInt(document.getElementById('numMC').value);
+        let inMatch = parseInt(document.getElementById('numMatch').value);
+        let inGap = parseInt(document.getElementById('numGap').value);
+        
+        let isAuto = isNaN(inMC) && isNaN(inMatch) && isNaN(inGap);
+
+        if (isAuto) {
+            CONFIG.gap = Math.floor(totalWords * 0.25);
+            if (CONFIG.gap < 5 && totalWords > 10) CONFIG.gap = 5;
+            CONFIG.match = Math.floor((totalWords - CONFIG.gap) / 2);
+            CONFIG.mc = totalWords - CONFIG.gap - CONFIG.match;
+        } else {
+            CONFIG.mc = isNaN(inMC) ? 0 : Math.max(0, inMC);
+            CONFIG.match = isNaN(inMatch) ? 0 : Math.max(0, inMatch);
+            CONFIG.gap = isNaN(inGap) ? 0 : Math.max(0, inGap);
+            
+            let reqTotal = CONFIG.mc + CONFIG.match + CONFIG.gap;
+            if (reqTotal === 0) return alert("总题数不能为 0，请至少设置一种题型。");
+            if (reqTotal > totalWords) {
+                return alert(`您要求的总题数 (${reqTotal}) 超过了导入的单词数 (${totalWords})！`);
+            }
+        }
+
+        analyzePOS();
+
+        document.getElementById('setupPanel').classList.add('hidden');
+        document.getElementById('controlBar').classList.remove('hidden');
+        document.getElementById('paper').classList.remove('hidden');
+
+        generateTest();
+    }
+
+    function analyzePOS() {
+        PROCESSED_DATA = RAW_DATA.map(item => {
+            let doc = nlp(item.en);
+            let pos = 'others';
+            if (doc.verbs().found) pos = 'verbs';
+            else if (doc.nouns().found) pos = 'nouns';
+            else if (doc.adjectives().found) pos = 'adjectives';
+            else if (doc.adverbs().found) pos = 'others';
+            return { ...item, pos: pos };
+        });
+    }
+
+    function showSetup() {
+        document.getElementById('setupPanel').classList.remove('hidden');
+        document.getElementById('controlBar').classList.add('hidden');
+        document.getElementById('paper').classList.add('hidden');
+    }
+
+    function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
+
+    function generateTest() {
+        let pool = shuffle([...PROCESSED_DATA]);
+
+        let mcSet = pool.slice(0, CONFIG.mc);
+        let matchSet = pool.slice(CONFIG.mc, CONFIG.mc + CONFIG.match);
+        let gapSet = pool.slice(CONFIG.mc + CONFIG.match, CONFIG.mc + CONFIG.match + CONFIG.gap);
+        
+        let safePoolForMC = pool.filter(w => !gapSet.includes(w));
+
+        let currentQNum = 1;
+        let romanNumerals = ['I', 'II', 'III'];
+        let romanIdx = 0;
+
+        const blockMC = document.getElementById('block-mc');
+        if (CONFIG.mc > 0) {
+            blockMC.style.display = 'block';
+            document.getElementById('part-num-mc').innerText = `Part ${romanNumerals[romanIdx++]}. `;
+            currentQNum = renderMC(mcSet, safePoolForMC, currentQNum);
+        } else {
+            blockMC.style.display = 'none';
+        }
+
+        const blockMatch = document.getElementById('block-match');
+        if (CONFIG.match > 0) {
+            blockMatch.style.display = 'block';
+            document.getElementById('part-num-match').innerText = `Part ${romanNumerals[romanIdx++]}. `;
+            currentQNum = renderMatch(matchSet, currentQNum);
+        } else {
+            blockMatch.style.display = 'none';
+        }
+
+        const blockGap = document.getElementById('block-gap');
+        if (CONFIG.gap > 0) {
+            blockGap.style.display = 'block';
+            document.getElementById('part-num-gap').innerText = `Part ${romanNumerals[romanIdx++]}. `;
+            currentQNum = renderGap(gapSet, currentQNum);
+        } else {
+            blockGap.style.display = 'none';
+        }
+
+        document.getElementById('statusMsg').innerText = `当前出题: 单选(${CONFIG.mc}) | 配对(${CONFIG.match}) | 填空(${CONFIG.gap})`;
+    }
+
+    function renderMC(targets, internalPool, startNum) {
+        const container = document.getElementById('section-mc');
+        container.innerHTML = "";
+        let qNum = startNum;
+
+        targets.forEach((item) => {
+            let internalDistractors = internalPool.filter(w => w.en !== item.en && w.pos === item.pos);
+            shuffle(internalDistractors);
+
+            let cloudDistractors = [];
+            if (internalDistractors.length < 3) {
+                let countNeeded = 3 - internalDistractors.length;
+                let cloudSource = BACKUP_DB[item.pos] || BACKUP_DB['others'];
+                let safeCloudSource = cloudSource.filter(w => w !== item.en.toLowerCase());
+                shuffle(safeCloudSource);
+                cloudDistractors = safeCloudSource.slice(0, countNeeded).map(w => ({en: w}));
+            }
+
+            let finalDistractors = [...internalDistractors.slice(0, 3), ...cloudDistractors].slice(0, 3);
+            if (finalDistractors.length < 3) {
+                 let emergencyFill = BACKUP_DB['others'].slice(0, 3 - finalDistractors.length).map(w=>({en:w}));
+                 finalDistractors = [...finalDistractors, ...emergencyFill];
+            }
+
+            let options = shuffle([item, ...finalDistractors]);
+            let posBadge = `<span class="badge badge-${item.pos[0]}" contenteditable="false">${item.pos.slice(0,3)}</span>`;
+            
+            container.innerHTML += `
+                <div class="q-item">
+                    <div style="font-weight:bold; margin-bottom:4px;" contenteditable="true">
+                        ${qNum++}. ${item.def} ${posBadge}
+                    </div>
+                    <div class="options" contenteditable="true">
+                        A. ${options[0].en} &nbsp;&nbsp; B. ${options[1].en} &nbsp;&nbsp; C. ${options[2].en} &nbsp;&nbsp; D. ${options[3].en}
+                    </div>
+                </div>
+            `;
+        });
+        return qNum;
+    }
+
+    // 🔥 全新优化的配对题渲染函数
+    function renderMatch(set, startNum) {
+        const container = document.getElementById('section-match');
+        container.innerHTML = "";
+        let qNum = startNum;
+        const chunkSize = 5;
+
+        for(let i=0; i<set.length; i+=chunkSize) {
+            let chunk = set.slice(i, i+chunkSize);
+            let left = chunk.map(i => i.en);
+            let right = shuffle(chunk.map(i => i.def));
+            
+            let html = `
+            <div class="match-block">
+                <strong style="display:block; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:5px;">
+                    Match Set ${Math.floor(i/5)+1}
+                </strong>
+                <div class="match-columns">
+                    <div class="match-left">`;
+            
+            left.forEach((w) => { 
+                html += `<div contenteditable="true">${qNum++}. ${w}</div>`; 
+            });
+            
+            html += `</div><div class="match-right">`;
+            
+            right.forEach((d, j) => { 
+                html += `<div contenteditable="true">(&nbsp;&nbsp;&nbsp;) ${String.fromCharCode(65+j)}. ${d}</div>`; 
+            });
+
+            html += `</div></div></div>`;
+            container.innerHTML += html;
+        }
+        return qNum;
+    }
+
+    function renderGap(set, startNum) {
+        const container = document.getElementById('section-gap');
+        container.innerHTML = "";
+        let qNum = startNum;
+        
+        set.forEach((item) => {
+            let word = item.en;
+            let masked = word[0];
+            
+            for(let k=1; k<word.length; k++) {
+                let char = word[k];
+                if(!/[a-zA-Z]/.test(char)) masked += char;
+                else masked += (Math.random() > 0.4) ? "_" : char;
+            }
+            if(!masked.includes("_")) masked = word.substring(0, Math.ceil(word.length/2)) + "_".repeat(Math.floor(word.length/2));
+
+            container.innerHTML += `
+                <div class="gap-item">
+                    <div contenteditable="true">
+                        <strong>${qNum++}.</strong> 
+                        <span style="font-family:'Courier New', monospace; font-weight:bold; letter-spacing:3px;">${masked}</span>
+                    </div>
+                    <div style="font-size:10pt; color:#666; margin-top:2px;" contenteditable="true">
+                        Hint: ${item.def}
+                    </div>
+                </div>
+            `;
+        });
+        return qNum;
+    }
+</script>
+
+</body>
+</html>
