@@ -361,6 +361,36 @@
         /* Word-completion layout */
         .gap-container { column-count: 2; column-gap: 40px; }
         .gap-item { break-inside: avoid; page-break-inside: avoid; margin-bottom: 15px; }
+        .answer-sheet {
+            margin-top: 56px;
+            padding-top: 24px;
+            border-top: 2px dashed rgba(22, 32, 51, 0.18);
+            break-before: page;
+            page-break-before: always;
+        }
+        .answer-sheet h2.section-title { margin-top: 0; }
+        .answer-note {
+            margin: 0 0 18px;
+            color: #5d6778;
+            font-size: 10.5pt;
+            line-height: 1.5;
+        }
+        .answer-group { margin-bottom: 18px; }
+        .answer-group h3 {
+            margin: 0 0 8px;
+            color: var(--primary);
+            font-size: 12pt;
+        }
+        .answer-line {
+            font-family: "Consolas", "SFMono-Regular", "Courier New", monospace;
+            font-size: 10.5pt;
+            line-height: 1.8;
+            word-break: break-word;
+        }
+        .answer-chip {
+            display: inline-block;
+            margin: 0 14px 6px 0;
+        }
         .watermark {
             position: fixed;
             right: 22px;
@@ -435,6 +465,13 @@
             .gap-container {
                 column-count: 2 !important;
                 column-gap: 40px !important;
+            }
+            .answer-sheet {
+                margin-top: 0 !important;
+                padding-top: 0 !important;
+                border-top: none !important;
+                break-before: page !important;
+                page-break-before: always !important;
             }
             h2.section-title { background-color: #ddd !important; -webkit-print-color-adjust: exact; }
             [contenteditable="true"] { outline: none !important; background: transparent !important; }
@@ -516,6 +553,7 @@
 <div class="control-bar hidden" id="controlBar">
     <button class="btn btn-outline" onclick="showSetup()" style="margin-top:0; width:auto;">Back to Setup</button>
     <button class="btn" onclick="generateTest()" style="margin-top:0; width:auto;">Shuffle Questions</button>
+    <button class="btn btn-outline" id="toggleAnswersBtn" onclick="toggleAnswers()" style="margin-top:0; width:auto;">Show Answers</button>
     <button class="btn" onclick="window.print()" style="margin-top:0; width:auto; background:linear-gradient(135deg, #2f6d59, #459173);">Print / Export PDF</button>
     <div id="statusMsg" style="align-self:center; font-size:13px; color:rgba(255,244,228,0.82); margin-left:15px; font-weight:bold; letter-spacing:0.04em;"></div>
 </div>
@@ -562,6 +600,12 @@
     <div style="margin-top: 50px; text-align: center; border-top: 1px solid #ccc; padding-top: 10px; font-size: 9pt; color: #999;">
         Generated with Vocabulary Quiz Studio | Smart distractors enabled
     </div>
+
+    <div class="answer-sheet hidden" id="answerSheet">
+        <h2 class="section-title">Answer Key</h2>
+        <p class="answer-note">Shown only when you choose to display answers. This page prints separately from the test paper.</p>
+        <div id="answerContent"></div>
+    </div>
 </div>
 
 <div class="watermark no-print">designed by chase</div>
@@ -581,6 +625,8 @@
     let RECENT_SETS = [];
     let LAST_IMPORT_NAME = '';
     let RECENT_NOTICE = '';
+    let ANSWERS_VISIBLE = false;
+    let CURRENT_ANSWER_KEY = { mc: [], match: [], gap: [] };
 
     const RECENT_STORAGE_KEY = 'vocab-fast-quiz.recent-sets.v1';
     const MAX_RECENT_SETS = 10;
@@ -936,60 +982,62 @@
     }
 
     function startGeneration() {
-        const text = normalizeDatasetText(byId('textInput').value);
-        if (!text) return alert('Please enter vocabulary data first.');
+        try {
+            const text = normalizeDatasetText(byId('textInput').value);
+            if (!text) return alert('Please enter vocabulary data first.');
 
-        byId('textInput').value = text;
-        RAW_DATA = parseRawData(text);
+            byId('textInput').value = text;
+            RAW_DATA = parseRawData(text);
 
-        if (!RAW_DATA.length) {
-            return alert('No valid rows were detected. Please use a two-column "word + definition" format.');
-        }
-
-        const totalWords = RAW_DATA.length;
-        if (totalWords < 3) return alert('At least 3 vocabulary items are required.');
-
-        saveCurrentDataset({ silent: true });
-
-        const inMC = parseInt(byId('numMC').value, 10);
-        const inMatch = parseInt(byId('numMatch').value, 10);
-        const inGap = parseInt(byId('numGap').value, 10);
-        const isAuto = [inMC, inMatch, inGap].every(Number.isNaN);
-
-        if (isAuto) {
-            CONFIG.gap = Math.floor(totalWords * 0.25);
-            if (CONFIG.gap < 5 && totalWords > 10) CONFIG.gap = 5;
-            CONFIG.match = Math.floor((totalWords - CONFIG.gap) / 2);
-            CONFIG.mc = totalWords - CONFIG.gap - CONFIG.match;
-        } else {
-            CONFIG.mc = Number.isNaN(inMC) ? 0 : Math.max(0, inMC);
-            CONFIG.match = Number.isNaN(inMatch) ? 0 : Math.max(0, inMatch);
-            CONFIG.gap = Number.isNaN(inGap) ? 0 : Math.max(0, inGap);
-
-            const reqTotal = CONFIG.mc + CONFIG.match + CONFIG.gap;
-            if (reqTotal === 0) return alert('The total number of questions cannot be 0. Please enable at least one section.');
-            if (reqTotal > totalWords) {
-                return alert(`Your requested total (${reqTotal}) exceeds the imported word count (${totalWords}).`);
+            if (!RAW_DATA.length) {
+                return alert('No valid rows were detected. Please use a two-column "word + definition" format.');
             }
+
+            const totalWords = RAW_DATA.length;
+            if (totalWords < 3) return alert('At least 3 vocabulary items are required.');
+
+            saveCurrentDataset({ silent: true });
+
+            const inMC = parseInt(byId('numMC').value, 10);
+            const inMatch = parseInt(byId('numMatch').value, 10);
+            const inGap = parseInt(byId('numGap').value, 10);
+            const isAuto = [inMC, inMatch, inGap].every(Number.isNaN);
+
+            if (isAuto) {
+                CONFIG.gap = Math.floor(totalWords * 0.25);
+                if (CONFIG.gap < 5 && totalWords > 10) CONFIG.gap = 5;
+                CONFIG.match = Math.floor((totalWords - CONFIG.gap) / 2);
+                CONFIG.mc = totalWords - CONFIG.gap - CONFIG.match;
+            } else {
+                CONFIG.mc = Number.isNaN(inMC) ? 0 : Math.max(0, inMC);
+                CONFIG.match = Number.isNaN(inMatch) ? 0 : Math.max(0, inMatch);
+                CONFIG.gap = Number.isNaN(inGap) ? 0 : Math.max(0, inGap);
+
+                const reqTotal = CONFIG.mc + CONFIG.match + CONFIG.gap;
+                if (reqTotal === 0) return alert('The total number of questions cannot be 0. Please enable at least one section.');
+                if (reqTotal > totalWords) {
+                    return alert(`Your requested total (${reqTotal}) exceeds the imported word count (${totalWords}).`);
+                }
+            }
+
+            analyzePOS();
+            ANSWERS_VISIBLE = false;
+            renderAnswerKey();
+
+            byId('setupPanel').classList.add('hidden');
+            byId('controlBar').classList.remove('hidden');
+            byId('paper').classList.remove('hidden');
+
+            generateTest();
+        } catch (error) {
+            console.error('startGeneration failed:', error);
+            alert(`Generation failed: ${error && error.message ? error.message : 'Unknown error'}`);
         }
-
-        analyzePOS();
-
-        byId('setupPanel').classList.add('hidden');
-        byId('controlBar').classList.remove('hidden');
-        byId('paper').classList.remove('hidden');
-
-        generateTest();
     }
 
     function analyzePOS() {
         PROCESSED_DATA = RAW_DATA.map(item => {
-            const doc = nlp(item.en);
-            let pos = 'others';
-            if (doc.verbs().found) pos = 'verbs';
-            else if (doc.nouns().found) pos = 'nouns';
-            else if (doc.adjectives().found) pos = 'adjectives';
-            return { ...item, pos };
+            return { ...item, pos: detectPOS(item.en) };
         });
     }
 
@@ -997,6 +1045,8 @@
         byId('setupPanel').classList.remove('hidden');
         byId('controlBar').classList.add('hidden');
         byId('paper').classList.add('hidden');
+        ANSWERS_VISIBLE = false;
+        renderAnswerKey();
         updateInputSummary();
     }
 
@@ -1008,21 +1058,102 @@
         return arr;
     }
 
+    function normalizeWordKey(word) {
+        return String(word || '').trim().toLowerCase();
+    }
+
+    function escapeHtml(text) {
+        return String(text || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function buildAnswerGroup(title, entries) {
+        if (!entries.length) return '';
+        const chips = entries
+            .map(entry => `<span class="answer-chip">${entry.num}.${escapeHtml(entry.value)}</span>`)
+            .join('');
+        return `
+            <div class="answer-group">
+                <h3>${escapeHtml(title)}</h3>
+                <div class="answer-line">${chips}</div>
+            </div>
+        `;
+    }
+
+    function renderAnswerKey() {
+        const answerSheet = byId('answerSheet');
+        const answerContent = byId('answerContent');
+        const toggleBtn = byId('toggleAnswersBtn');
+        const html = [
+            buildAnswerGroup('Part I. Multiple Choice', CURRENT_ANSWER_KEY.mc || []),
+            buildAnswerGroup('Part II. Matching', CURRENT_ANSWER_KEY.match || []),
+            buildAnswerGroup('Part III. Word Completion', CURRENT_ANSWER_KEY.gap || [])
+        ].filter(Boolean).join('');
+
+        answerContent.innerHTML = html;
+
+        if (toggleBtn) {
+            toggleBtn.innerText = ANSWERS_VISIBLE ? 'Hide Answers' : 'Show Answers';
+        }
+
+        if (ANSWERS_VISIBLE && html) {
+            answerSheet.classList.remove('hidden');
+        } else {
+            answerSheet.classList.add('hidden');
+        }
+    }
+
+    function toggleAnswers() {
+        ANSWERS_VISIBLE = !ANSWERS_VISIBLE;
+        renderAnswerKey();
+    }
+
+    function detectPOS(word) {
+        const normalized = normalizeWordKey(word);
+        if (!normalized) return 'others';
+
+        if (typeof nlp === 'function') {
+            try {
+                const doc = nlp(word);
+                if (doc.verbs().found) return 'verbs';
+                if (doc.nouns().found) return 'nouns';
+                if (doc.adjectives().found) return 'adjectives';
+            } catch (error) {
+                // Fall through to local heuristics.
+            }
+        }
+
+        if ((BACKUP_DB.verbs || []).includes(normalized)) return 'verbs';
+        if ((BACKUP_DB.nouns || []).includes(normalized)) return 'nouns';
+        if ((BACKUP_DB.adjectives || []).includes(normalized)) return 'adjectives';
+
+        if (/(ate|ify|ise|ize|ing|ed|en)$/.test(normalized)) return 'verbs';
+        if (/(tion|sion|ment|ness|ity|ty|ism|age|ance|ence|ship|hood)$/.test(normalized)) return 'nouns';
+        if (/(able|ible|al|ful|ic|ive|less|ous|ary|ory|ant|ent)$/.test(normalized)) return 'adjectives';
+
+        return 'others';
+    }
+
     function addUniqueDistractor(list, used, candidate) {
         const word = typeof candidate === 'string' ? candidate : candidate.en;
-        const normalized = String(word || '').trim().toLowerCase();
+        const normalized = normalizeWordKey(word);
         if (!normalized || used.has(normalized)) return false;
         used.add(normalized);
         list.push({ en: word });
         return true;
     }
 
-    function buildDistractors(item, internalPool) {
+    function buildDistractors(item, internalPool, blockedWords = new Set()) {
         const distractors = [];
-        const used = new Set([item.en.trim().toLowerCase()]);
+        const used = new Set(blockedWords);
+        used.add(normalizeWordKey(item.en));
 
         const internalCandidates = shuffle(
-            internalPool.filter(w => w.en !== item.en && w.pos === item.pos)
+            internalPool.filter(w => normalizeWordKey(w.en) !== normalizeWordKey(item.en) && w.pos === item.pos)
         );
         internalCandidates.forEach(candidate => {
             if (distractors.length < 3) addUniqueDistractor(distractors, used, candidate);
@@ -1042,57 +1173,79 @@
     }
 
     function generateTest() {
-        const pool = shuffle([...PROCESSED_DATA]);
-        const mcSet = pool.slice(0, CONFIG.mc);
-        const matchSet = pool.slice(CONFIG.mc, CONFIG.mc + CONFIG.match);
-        const gapSet = pool.slice(CONFIG.mc + CONFIG.match, CONFIG.mc + CONFIG.match + CONFIG.gap);
-        const safePoolForMC = pool.filter(w => !gapSet.includes(w));
+        try {
+            const pool = shuffle([...PROCESSED_DATA]);
+            const mcSet = pool.slice(0, CONFIG.mc);
+            const matchSet = pool.slice(CONFIG.mc, CONFIG.mc + CONFIG.match);
+            const gapSet = pool.slice(CONFIG.mc + CONFIG.match, CONFIG.mc + CONFIG.match + CONFIG.gap);
+            const safePoolForMC = [...mcSet];
+            const blockedWordsForMC = new Set(
+                [...matchSet, ...gapSet].map(item => normalizeWordKey(item.en))
+            );
+            const nextAnswerKey = { mc: [], match: [], gap: [] };
 
-        let currentQNum = 1;
-        const romanNumerals = ['I', 'II', 'III'];
-        let romanIdx = 0;
+            let currentQNum = 1;
+            const romanNumerals = ['I', 'II', 'III'];
+            let romanIdx = 0;
 
-        const blockMC = byId('block-mc');
-        if (CONFIG.mc > 0) {
-            blockMC.style.display = 'block';
-            byId('part-num-mc').innerText = `Part ${romanNumerals[romanIdx++]}. `;
-            currentQNum = renderMC(mcSet, safePoolForMC, currentQNum);
-        } else {
-            blockMC.style.display = 'none';
+            const blockMC = byId('block-mc');
+            if (CONFIG.mc > 0) {
+                blockMC.style.display = 'block';
+                byId('part-num-mc').innerText = `Part ${romanNumerals[romanIdx++]}. `;
+                const mcResult = renderMC(mcSet, safePoolForMC, blockedWordsForMC, currentQNum);
+                currentQNum = mcResult.nextNum;
+                nextAnswerKey.mc = mcResult.answers;
+            } else {
+                blockMC.style.display = 'none';
+            }
+
+            const blockMatch = byId('block-match');
+            if (CONFIG.match > 0) {
+                blockMatch.style.display = 'block';
+                byId('part-num-match').innerText = `Part ${romanNumerals[romanIdx++]}. `;
+                const matchResult = renderMatch(matchSet, currentQNum);
+                currentQNum = matchResult.nextNum;
+                nextAnswerKey.match = matchResult.answers;
+            } else {
+                blockMatch.style.display = 'none';
+            }
+
+            const blockGap = byId('block-gap');
+            if (CONFIG.gap > 0) {
+                blockGap.style.display = 'block';
+                byId('part-num-gap').innerText = `Part ${romanNumerals[romanIdx++]}. `;
+                const gapResult = renderGap(gapSet, currentQNum);
+                currentQNum = gapResult.nextNum;
+                nextAnswerKey.gap = gapResult.answers;
+            } else {
+                blockGap.style.display = 'none';
+            }
+
+            CURRENT_ANSWER_KEY = nextAnswerKey;
+            renderAnswerKey();
+
+            byId('statusMsg').innerText =
+                `Current build: MC ${CONFIG.mc} | Match ${CONFIG.match} | Completion ${CONFIG.gap} | Word bank ${PROCESSED_DATA.length}`;
+        } catch (error) {
+            console.error('generateTest failed:', error);
+            alert(`Paper generation failed: ${error && error.message ? error.message : 'Unknown error'}`);
         }
-
-        const blockMatch = byId('block-match');
-        if (CONFIG.match > 0) {
-            blockMatch.style.display = 'block';
-            byId('part-num-match').innerText = `Part ${romanNumerals[romanIdx++]}. `;
-            currentQNum = renderMatch(matchSet, currentQNum);
-        } else {
-            blockMatch.style.display = 'none';
-        }
-
-        const blockGap = byId('block-gap');
-        if (CONFIG.gap > 0) {
-            blockGap.style.display = 'block';
-            byId('part-num-gap').innerText = `Part ${romanNumerals[romanIdx++]}. `;
-            currentQNum = renderGap(gapSet, currentQNum);
-        } else {
-            blockGap.style.display = 'none';
-        }
-
-        byId('statusMsg').innerText =
-            `Current build: MC ${CONFIG.mc} | Match ${CONFIG.match} | Completion ${CONFIG.gap} | Word bank ${PROCESSED_DATA.length}`;
     }
 
-    function renderMC(targets, internalPool, startNum) {
+    function renderMC(targets, internalPool, blockedWords, startNum) {
         const container = byId('section-mc');
         const htmlBlocks = [];
+        const answers = [];
         let qNum = startNum;
 
         targets.forEach(item => {
-            const finalDistractors = buildDistractors(item, internalPool);
+            const finalDistractors = buildDistractors(item, internalPool, blockedWords);
             const options = shuffle([item, ...finalDistractors]).slice(0, 4);
             const posBadge = `<span class="badge badge-${item.pos[0]}" contenteditable="false">${item.pos.slice(0, 3)}</span>`;
             const labels = ['A', 'B', 'C', 'D'];
+            const questionNum = qNum;
+            const correctIndex = options.findIndex(option => normalizeWordKey(option.en) === normalizeWordKey(item.en));
+            answers.push({ num: questionNum, value: labels[correctIndex] || '?' });
             const optionText = labels
                 .map((label, index) => `${label}. ${(options[index] && options[index].en) || '____'}`)
                 .join(' &nbsp;&nbsp; ');
@@ -1110,19 +1263,20 @@
         });
 
         container.innerHTML = htmlBlocks.join('');
-        return qNum;
+        return { nextNum: qNum, answers };
     }
 
     function renderMatch(set, startNum) {
         const container = byId('section-match');
         const blocks = [];
+        const answers = [];
         let qNum = startNum;
         const chunkSize = 5;
 
         for (let i = 0; i < set.length; i += chunkSize) {
             const chunk = set.slice(i, i + chunkSize);
             const left = chunk.map(item => item.en);
-            const right = shuffle(chunk.map(item => item.def));
+            const right = shuffle(chunk.map(item => ({ item, def: item.def })));
 
             let html = `
             <div class="match-block">
@@ -1132,9 +1286,13 @@
                 <div class="match-columns">`;
 
             left.forEach((word, index) => {
+                const item = chunk[index];
+                const questionNum = qNum;
+                const answerLetter = String.fromCharCode(65 + right.findIndex(entry => entry.item === item));
+                answers.push({ num: questionNum, value: answerLetter });
                 html += `
                     <div class="match-item match-left" contenteditable="true">${qNum++}. ${word}</div>
-                    <div class="match-item match-right" contenteditable="true">(&nbsp;&nbsp;&nbsp;) ${String.fromCharCode(65 + index)}. ${right[index]}</div>
+                    <div class="match-item match-right" contenteditable="true">(&nbsp;&nbsp;&nbsp;) ${String.fromCharCode(65 + index)}. ${right[index].def}</div>
                 `;
             });
 
@@ -1143,7 +1301,7 @@
         }
 
         container.innerHTML = blocks.join('');
-        return qNum;
+        return { nextNum: qNum, answers };
     }
 
     function maskWord(word) {
@@ -1165,9 +1323,12 @@
     function renderGap(set, startNum) {
         const container = byId('section-gap');
         const htmlBlocks = [];
+        const answers = [];
         let qNum = startNum;
 
         set.forEach(item => {
+            const questionNum = qNum;
+            answers.push({ num: questionNum, value: item.en });
             htmlBlocks.push(`
                 <div class="gap-item">
                     <div contenteditable="true">
@@ -1182,7 +1343,7 @@
         });
 
         container.innerHTML = htmlBlocks.join('');
-        return qNum;
+        return { nextNum: qNum, answers };
     }
 
     function initApp() {
@@ -1199,6 +1360,7 @@
 
         renderRecentDatasets();
         updateInputSummary();
+        renderAnswerKey();
     }
 
     initApp();
